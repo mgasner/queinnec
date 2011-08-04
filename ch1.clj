@@ -3,6 +3,7 @@
 
 (defn evaluate
   [exp env]
+  ;(prn exp)
   (if (atom? exp)
       (cond (symbol? exp)
               (lookup exp env)
@@ -22,32 +23,34 @@
               (= term (symbol "set!"))
                 (update! (second exp) env (evaluate (third exp) env))
               (= term (symbol "lambda"))
-                (make-function (second exp) (third exp) env)
+                (make-function (second exp) (rest (rest exp)) env)
               :else
                 (invoke (evaluate (first exp) env) (evlis (rest exp) env))))))
 
 (defn eprogn
   [exps env]
-  (if (list? exps)
-    (if (list? (rest exps))
+  (if (empty? exps)
+    empty-begin
+    (if (empty? (rest exps))
+        (evaluate (first exps) env)
         (do (evaluate (first exps) env)
-            (recur (rest exps) env))
-        (evaluate (first exps) env))
-    empty-begin))
-
+            (recur (rest exps) env)))))
+            
 (defn evlis
   [exps env]
-  (if (list? exps)
-      (let [argument1 (evaluate (first exps) env)]
-        (cons argument1 (evlis (rest exps) env)))
-      '()))
-  
+  (if (empty? exps)
+      '()
+      (cons (evaluate (first exps) env) (evlis (rest exps) env))))
+      
+    
 ; representing environments as maps, not a-lists
 (def env-init (ref (hash-map)))
 
 (defn lookup
   [id env]
-  (get (deref env) (keyword id) (throw (Exception. (str "No such binding: " id)))))
+  (if (contains? (deref env) (keyword id))
+      (get (deref env) (keyword id))
+      (throw (Exception. (str "No such binding: " id)))))
 
 (defn update!
   [id env value]
@@ -57,14 +60,14 @@
       
 (defn extend-env
   [env variables values]
-  (cond (list? variables)
-          (if (list? values)
-              (recur (ref (assoc (deref env) (keyword (first variables)) (first values))) (rest variables) (rest values))
-              (throw (Exception. "Too few values")))
-        (empty? variables)
+  (cond (empty? variables)
           (if (empty? values)
               env
               (throw (Exception. "Too many values")))
+        (seq? variables)
+          (if (seq? values)
+              (recur (ref (assoc (deref env) (keyword (first variables)) (first values))) (rest variables) (rest values))
+              (throw (Exception. "EXTEND-ENV: Too few values")))
         (symbol? variables)
           (dosync
             (ref-set env (assoc (deref env) (keyword variables) values))
@@ -73,11 +76,12 @@
 (defn make-function
   [variables body env]
   (fn
-    [values]
-    (eprogn body (extend env variables values))))
+    [vals]
+    (eprogn body (extend-env env variables vals))))
 
 (defn invoke
   [fn args]
+  ;(prn fn args)
   (if (fn? fn)
       (fn args)
       (throw (Exception. (str "Not a function" fn)))))
@@ -89,10 +93,10 @@
 (defn fourth
   [l]
   (first (rest (rest (rest l)))))
-  
+    
 (defn atom?
   [x]
-  (not (list? x)))
+  (not (seq? x)))
 
 (defn boolean?
   [x]
@@ -121,16 +125,8 @@
 (definitialname 'bar)
 (definitialname 'fib)
 (definitialname 'fact)
-(defprimitive 'cons conj 2)
+(defprimitive 'cons cons 2)
 (defprimitive 'car first 1)
 (defprimitive '+ + 2)
 (defprimitive '= = 2)
 (defprimitive '< < 2)
-
-(defn chapter1-scheme
-  []
-  (defn toplevel
-    []
-    (printf (evaluate (read-line) env-global))
-    (recur))
-  (toplevel))
